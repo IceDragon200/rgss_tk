@@ -1,0 +1,105 @@
+#!/usr/bin/env ruby
+# rm-macl/bin/extract_rvdata
+#
+require 'zlib'
+require 'fileutils'
+require 'rgss_tk/core_ext/kernel'
+
+##
+# File.sanitize_filename(String filename)
+#
+def File.sanitize_filename(filename)
+  #filename.strip.chomp.gsub(/[\>\<\:\;\\\/\|\*\?\"\'\!\,\^\%\$\#\@\~\`]/,?_)
+  filename.gsub(/[^0-9A-Za-z.\-\_]/) { $1 }
+end
+
+module ScriptExtractor
+  VERSION = '1.1.0'
+  CHAR_NEWLINE = "\n"
+
+  HELP_STR = <<_EOF_
+RMVX/A Scripts Extractor V#{VERSION}
+by IceDragon
+
+USAGE ruby extract_rvdata "src_filename" -o "output_directory"
+  -d --default
+    Sets the default settings
+
+  -o --output <pathname>
+    Set the extraction destination
+    The folder will be created if it does not exist
+
+_EOF_
+
+  ##
+  # ::set_default_config(Hash<Symbol, String> settings)
+  #
+  def self.set_default_config(settings)
+    settings[:src]  = File.expand_path("Data/Scripts.rvdata2")
+    settings[:dest] = File.expand_path("Scripts/")
+    return settings
+  end
+
+  ##
+  # ::run(String[] argsv)
+  #
+  def self.run(argsv)
+    if argsv.empty?
+      puts HELP_STR
+      return
+    end
+
+    settings = {
+      src: nil,
+      dest: nil,
+      double_line_fix: true,
+    }
+    set_default_config(settings)
+    settings[:src] = argsv.shift
+
+    while(arg = argsv.shift)
+      case arg
+      when '--default', '-d'
+        puts 'Setting default configuration'
+        set_default_config(settings)
+      # Set the destination/target directory/file
+      when '--output', '-o'
+        settings[:dest] = argsv.shift
+      when '--double-line-fix'
+        settings[:double_line_fix] = true
+      when '--no-double-line-fix'
+        settings[:double_line_fix] = false
+      else
+        raise ArgumentError, "Invalid Command: #{arg}"
+      end
+    end
+
+    src  = settings[:src]
+    dest = settings[:dest]
+
+    FileUtils::Verbose.mkdir_p dest
+
+    puts '>> Extracting'
+
+    scripts = load_data(src)
+
+    scripts.each_with_index do |(checksum, name, zstr), i|
+      puts "Processing [#{"%04d" % i}]#{name}"
+      fn = ("[%04d]%s.%s" % [i, File.sanitize_filename(name), "rb"])
+      fn = File.join(dest, fn)
+      File.open(fn, "w+") do |f|
+        str = Zlib.inflate(zstr)
+        str.gsub!(/[\r\n]/i, CHAR_NEWLINE) # Replace [return carriage, newline] with just a new line
+        if settings[:double_line_fix]
+          str.gsub!(/(\n\n)/i, CHAR_NEWLINE) # Fixes a weird doubleline error when inflating strings
+        end
+        f.write("#encoding:UTF-8\n# #{name}\n" + str.force_encoding("UTF-8"))
+      end
+    end
+
+    puts '>> Extraction Complete'
+  end
+
+end
+
+ScriptExtractor.run(ARGV.dup)

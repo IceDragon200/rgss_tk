@@ -1,0 +1,11 @@
+#!/usr/bin/env ruby
+# EASM Dissasembler
+require 'rake/ext/string'
+require 'rgss_tk/file_read'
+require 'rgss_tk/file_write'
+require 'easm'
+require 'rgss_tk/easm/dissasembler'
+
+filename, = ARGV
+
+RgssTk::EASM::Dissasembler.dissasemble()

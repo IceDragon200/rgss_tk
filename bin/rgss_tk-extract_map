@@ -1,0 +1,53 @@
+#!/usr/bin/env ruby
+require 'json'
+require 'rgss_tk/rgss3'
+require 'rgss_tk/rgss3/rpg-json'
+require 'fileutils'
+
+def extract_map(filename)
+  basename = File.basename(filename, File.extname(filename))
+
+  map = load_data(filename)
+
+  FileUtils.mkdir_p(basename)
+  Dir.chdir(basename) do
+    data = map.to_h
+    data.delete(:events)
+    data.delete(:data)
+
+    File.write('head.json', JSON.pretty_generate(data))
+    File.write('data.json', JSON.pretty_generate(map.data.to_h))
+
+    FileUtils.mkdir_p('events')
+    Dir.chdir('events') do
+      map.events.each do |id, event|
+        event_basename = 'ev%03d' % id
+
+        FileUtils.mkdir_p(event_basename)
+        Dir.chdir(event_basename) do
+          event_data = event.to_h
+          event_data.delete(:pages)
+          File.write('head.json', JSON.pretty_generate(event_data))
+
+          FileUtils.mkdir_p('pages')
+          Dir.chdir('pages') do
+            event.pages.each_with_index do |page, page_index|
+              page_name = 'page-%02d' % page_index
+
+              FileUtils.mkdir_p(page_name)
+              Dir.chdir(page_name) do
+                page_data = page.to_h
+                page_data.delete(:list)
+                File.write('head.json', JSON.pretty_generate(page_data))
+                File.write('list.json', JSON.pretty_generate(page.list.map(&:to_h)))
+              end
+            end
+          end
+        end
+      end
+    end
+  end
+end
+
+filename = ARGV.first
+extract_map(filename)

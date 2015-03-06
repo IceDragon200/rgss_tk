@@ -1,0 +1,133 @@
+#!/usr/bin/env ruby
+require 'rgss_tk/core'
+require 'rgss_tk/core_ext'
+require 'rgss_tk/rvdata'
+require 'optparse'
+require 'colorize'
+
+class BaseMapRender
+  def make_buffer(width, height)
+    Array.new(height) { '' }
+  end
+end
+
+class Rgss2MapRender < BaseMapRender
+  def map_to_ascii(sys, map)
+    buffer = make_buffer(map.width, map.height)
+    buffer.join("\n")
+  end
+end
+
+class Rgss3MapRender < BaseMapRender
+  attr_accessor :tilesets
+
+  def validate_map(map)
+    if map.width != map.data.xsize
+      fail "map.width #{map.width} does not match map.data.xsize #{map.data.xsize}"
+    end
+    if map.height != map.data.ysize
+      fail "map.height #{map.height} does not match map.data.ysize #{map.data.ysize}"
+    end
+    unless tileset = @tilesets[map.tileset_id]
+      fail "Tileset #{map.tileset_id} does not exist"
+    end
+  end
+
+  def flag?(a, b)
+    (a & b) == b
+  end
+
+  def star?(flag)
+    !flag?(flag, 0b0000_000_0000_10000)
+  end
+
+  def boat_passable?(flag)
+    !flag?(flag, 0b0000_001_0000_00000)
+  end
+
+  def ship_passable?(flag)
+    !flag?(flag, 0b0000_010_0000_00000)
+  end
+
+  def airship_passable?(flag)
+    !flag?(flag, 0b0000_100_0000_00000)
+  end
+
+  def passable?(flag)
+    return true if star?(flag)
+    !flag?(flag, 0b0000_000_0000_01111)
+  end
+
+  def first_valid_tile_id(flags, data, x, y)
+    3.downto(0) do |z|
+      tile_id = data[x, y, z]
+      next if star?(flags[tile_id])
+      return tile_id
+    end
+    nil
+  end
+
+  def map_to_ascii(map)
+    validate_map map
+    buffer = make_buffer(map.width, map.height)
+    tileset = @tilesets[map.tileset_id]
+    flags = tileset.flags
+    map.height.times do |y|
+      map.width.times do |x|
+        tile_id = first_valid_tile_id(flags, map.data, x, y)
+        buffer[y][x] = (tile_id && passable?(flags[tile_id])) ? '.' : '#'
+      end
+    end
+    buffer.join("\n")
+  end
+end
+
+appname = File.basename(__FILE__)
+
+usage = %Q(Usage:
+  #{appname} [command] args
+
+Commands:
+  rgss2
+  rgss3
+
+Example:
+  A RGSS2 map will require the system data
+  #{appname} rgss2 Data/System.rvdata Data/Map001.rvdata
+
+  A RGSS3 map will require the tilesets
+  #{appname} rgss3 Data/Tilesets.rvdata2 Data/Map001.rvdata2
+)
+
+
+options = {
+
+}
+
+parser = OptionParser.new do |opts|
+
+end
+
+argv = parser.parse(ARGV)
+
+if argv.size < 3
+  abort usage
+end
+
+command, sysname, filename = argv
+case command
+when 'rgss3'
+  require 'rgss_tk/rgss3/rpg'
+  map = load_data(filename)
+  renderer = Rgss3MapRender.new
+  renderer.tilesets = load_data(sysname)
+  puts renderer.map_to_ascii(map)
+when 'rgss2'
+  require 'rgss_tk/rgss2/rpg'
+  sys = load_data(sysname)
+  map = load_data(filename)
+  renderer = Rgss2MapRender.new
+  puts renderer.map_to_ascii(sys, map)
+else
+  abort "Unknown command #{command}"
+end
